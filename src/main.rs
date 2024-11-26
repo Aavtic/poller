@@ -1,28 +1,33 @@
 pub mod poller;
 use poller::StdinData;
-
+use std::io::Write;
 use std::sync::mpsc::channel;
-use std::thread::spawn;
-
 
 fn main() {
-    let (sender, receiver) = channel();
+    let (tx, rx) = channel();
 
-    spawn(move || {
-        let _ = poller::live_read_stdin(sender.clone());
-    });
-
-    loop {
-        let char_data = receiver.recv().unwrap();
-        match char_data {
-            StdinData::Available(c) => {
-                let utf8_char = String::from_utf8(vec![c]).unwrap();
-                print!("{}", utf8_char);
-            },
-            StdinData::Over => {
-                println!("buffer over");
-                break;
-            }
-        }
-    }
+     let txclone = tx.clone();
+     let t1 = std::thread::spawn(move || {
+         let _ = poller::live_read_stdin("python3".to_string(), vec!["blocking.py".to_string()], txclone);
+     });
+     let mut stdout = std::io::stdout().lock();
+ 
+     while let Ok(stdin_data) = rx.recv() {
+         match stdin_data {
+             StdinData::Available(char) => {
+                 print!("{}", String::from_utf8(vec![char]).unwrap());
+                 stdout.flush().unwrap();
+             },
+             StdinData::StdinSender(sender) => {
+                 std::thread::spawn(move || {
+                     std::thread::sleep(std::time::Duration::from_secs(4));
+                     sender.send("Aadish\n".to_string()).unwrap();
+                     std::thread::sleep(std::time::Duration::from_secs(4));
+                     sender.send("18\n".to_string()).unwrap();
+                 });
+             },
+             StdinData::Over => break,
+         }
+     }
+     t1.join().unwrap();
 }
