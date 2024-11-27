@@ -1,6 +1,6 @@
 use std::io;
 use std::io::{Write, Read};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Sender};
 use std::process::Command;
 use std::process::Stdio;
 
@@ -34,11 +34,15 @@ pub fn live_read_stdin(program: String, arguments: Vec<String>, sender: Sender<S
     let mut stdin = proc.stdin.take().expect("Failed to open stdin");
     let mut stdout = proc.stdout.take().unwrap();
 
+    let sender_clone = sender.clone();
     std::thread::spawn(move || {
         loop {
             match rx.recv() {
                 Ok(stdin_str) => {
-                    stdin.write_all(stdin_str.as_bytes()).unwrap();
+                    if stdin.write_all(stdin_str.as_bytes()).is_err() {
+                        sender_clone.send(StdinData::Over).unwrap();
+                        return;
+                    };
                 },
                 Err(_e) => {
                 }
@@ -46,17 +50,21 @@ pub fn live_read_stdin(program: String, arguments: Vec<String>, sender: Sender<S
         }
     });
 
-
     let mut buffer = [0;1];
     
     loop {
         match stdout.read(&mut buffer) { 
             Ok(0) => {
-                sender.send(StdinData::Over).unwrap();
+                println!("sending over");
+                // TODO!
+                // Temporary Fix below;
+                if sender.send(StdinData::Over).is_err() {
+                    return Ok(());
+                };
                 return Ok(());
             },
             Ok(_) => {
-                sender.send(StdinData::Available(buffer[0])).unwrap();
+                sender.send(StdinData::Available(buffer[0])).unwrap(); 
             },
             Err(_) => {
                 sender.send(StdinData::Over).unwrap();
@@ -64,5 +72,5 @@ pub fn live_read_stdin(program: String, arguments: Vec<String>, sender: Sender<S
             }
         }
     }
-}
 
+}
